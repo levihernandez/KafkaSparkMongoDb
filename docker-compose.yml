@@ -1,0 +1,95 @@
+version: '3'
+services:
+  # Datadog Instance
+  datadog:
+    #image: datadog/agent:latest # commentted line in order to use the 'datadog/Dockerfile'
+    hostname: ddagentcontainer
+    container_name: ddagent-container
+    build:
+      context: ./datadog # uses the file 'datadog/Dockerfile'
+      dockerfile: Dockerfile # Datadog Dockerfile to rebuild image and push DD YAML conf files to the agent dir
+    environment:
+      - DD_API_KEY=<DATADOG-API-KEY> # replace '<DATADOG-API-KEY>' with your valid DD API Key
+      - DD_APM_ENABLED=true # Required for APM monitoring
+      - DD_LOGS_INJECTION=true # Required for APM & Log correlation monitoring
+      - DD_SITE=datadoghq.com
+      - DD_AGENT_MAJOR_VERSION=7
+      - DD_DOGSTATSD_NON_LOCAL_TRAFFIC=true
+      - DD_SERVICE="Spark"
+      - DD_ENV="dev"
+      - DD_SYSTEM_PROBE_ENABLED=true # Required for Network monitoring
+      - DD_PROCESS_AGENT_ENABLED=true # Required for Network monitoring
+    cap_add:  # Required for Network monitoring
+      - SYS_ADMIN
+      - SYS_RESOURCE
+      - SYS_PTRACE
+      - NET_ADMIN
+      - IPC_LOCK
+    security_opt: # Required for Network monitoring
+      - apparmor:unconfied
+    ports:
+      - "8126:8126/tcp"
+    volumes:
+      - ./datadog/home/data:/home/data # not required but I use it for sharing files from host to container
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /proc/:/host/proc/:ro
+      - /sys/fs/cgroup:/host/sys/fs/cgroup:ro
+    networks:
+      - ksm-network
+    depends_on:
+      - database # Container hostname alias for Mongodb
+      - compute # Container hostname alias for Spark
+  
+  # Kafka Instance
+  #stream:
+  #  image: 'kafka'
+  #  hostname: kafkacontainer
+  #  container_name: 'kafka-container'
+  #  environment:
+  #    - DATADOG_HOST=datadog
+  #  volumes:
+  #    - ./kafka/home/data:/home/data
+  #  ports:
+  #    - 9092:9092
+  #  networks:
+  #    - ksm-network
+
+  # MongoDB Instance
+  database:
+    image: 'mongo'
+    hostname: mongocontainer
+    container_name: 'mongodb-container'
+    environment:
+      - DATADOG_HOST=datadog
+      - MONGO_INITDB_DATABASE:ksmdb
+      - MONGO_INITDB_ROOT_USERNAME:root
+      - MONGO_INITDB_PASSWORD:root
+    volumes:
+      - ./mongodb/db:/data/db
+      - ./mongodb/home/data:/home/data
+    ports:
+      - "27017-27019:27017-27019"
+    networks:
+      - ksm-network
+
+  # Spark Instance named 'compute', which will be the domain name called within datadog container spark.yaml config as 'http://compute:8080'
+  compute:
+    image: 'bitnami/spark'
+    hostname: sparkcontainer
+    container_name: 'spark-container'
+    environment:
+      - DATADOG_HOST=datadog
+    ports: 
+      - "8888:8888"
+      - "4040-4080:4040-4080"
+    volumes:
+      - ./spark/code:/home/code
+    networks:
+      - ksm-network
+
+# Network for Kafka, Spark, MongoDB, and Datadog
+networks:
+  ksm-network:
+    driver: bridge
+      
+
